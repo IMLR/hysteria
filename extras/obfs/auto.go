@@ -131,6 +131,7 @@ func (a *autoPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 		wire := a.wireBuf[:n]
 		nn := a.sm.Deobfuscate(wire, a.plainBuf[:])
 		decoded := a.plainBuf[:nn]
+		families := a.families(addr)
 
 		// The exact Gecko marker (0x80) is distinct from QUIC's fixed bit.
 		// Do not feed an incomplete valid fragment to QUIC as a plain packet.
@@ -140,9 +141,17 @@ func (a *autoPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 				out, ready := a.acceptChunk(addr, h, chunk)
 				if ready && autoQUICLong(out) {
 					a.remember(addr, autoGecko)
+					if families&autoPlainFamily != 0 && autoQUICShort(wire) {
+						a.queue(wire, addr, autoPlain)
+					}
 					return copy(p, out), &autoAddr{addr, autoGecko}, nil
 				}
 				if !autoQUICLong(wire) {
+					// An established plain connection's ciphertext can happen
+					// to decode as a fragment. Keep its original candidate.
+					if families&autoPlainFamily != 0 && autoQUICShort(wire) {
+						return copy(p, wire), &autoAddr{addr, autoPlain}, nil
+					}
 					continue
 				}
 			}
@@ -164,9 +173,18 @@ func (a *autoPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 			return copy(p, wire), &autoAddr{addr, autoPlain}, nil
 		}
 
-		families := a.families(addr)
-		plainShort := families != autoObfsFamily && autoQUICShort(wire)
-		obfsShort := families != autoPlainFamily && autoQUICShort(decoded)
+		plainShort, obfsShort := autoQUICShort(wire), autoQUICShort(decoded)
+		// A recycled NAT endpoint may have a stale format hint. If its
+		// expected format does not fit, try the other candidate and widen
+		// the hint; do not permanently discard the new connection's data.
+		if plainShort && obfsShort {
+			plainShort = families != autoObfsFamily
+			obfsShort = families != autoPlainFamily
+		} else if plainShort {
+			a.remember(addr, autoPlain)
+		} else if obfsShort {
+			a.remember(addr, autoSalamander)
+		}
 		// After NAT rebinding, or when one endpoint uses both formats, short
 		// headers can be ambiguous. Deliver both candidates for QUIC's AEAD to
 		// validate; never guess a connection's reply mode from random salt.

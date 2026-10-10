@@ -171,6 +171,65 @@ func TestAutoHintsBounded(t *testing.T) {
 	require.Equal(t, autoPlainFamily|autoObfsFamily, a.families(clientAddr))
 }
 
+func TestAutoReusedNATEndpoint(t *testing.T) {
+	clientAddr, serverAddr := makeAddrs()
+	c, s := newMemPipe(clientAddr, serverAddr)
+	defer c.Close()
+	wrapped, err := WrapPacketConnAuto(s, AutoOptions{Password: []byte("shared-password")})
+	require.NoError(t, err)
+	defer wrapped.Close()
+	a := wrapped.(*autoPacketConn)
+	a.remember(clientAddr, autoPlain)
+	sm, err := newSalamanderObfuscator([]byte("shared-password"))
+	require.NoError(t, err)
+	payload := quicShort(300)
+	wire := make([]byte, len(payload)+smSaltLen)
+	for {
+		sm.Obfuscate(payload, wire)
+		if !autoQUICShort(wire) && !autoQUICLong(wire) {
+			break
+		}
+	}
+	_, err = c.WriteTo(wire, serverAddr)
+	require.NoError(t, err)
+	buf := make([]byte, 2048)
+	n, addr, err := a.ReadFrom(buf)
+	require.NoError(t, err)
+	require.Equal(t, payload, buf[:n])
+	require.Equal(t, autoSalamander, addr.(*autoAddr).mode)
+	require.Equal(t, autoPlainFamily|autoObfsFamily, a.families(clientAddr))
+}
+
+func TestAutoPlainDataResemblingGeckoFragment(t *testing.T) {
+	clientAddr, serverAddr := makeAddrs()
+	c, s := newMemPipe(clientAddr, serverAddr)
+	defer c.Close()
+	wrapped, err := WrapPacketConnAuto(s, AutoOptions{Password: []byte("shared-password")})
+	require.NoError(t, err)
+	defer wrapped.Close()
+	a := wrapped.(*autoPacketConn)
+	a.remember(clientAddr, autoPlain)
+	frame := make([]byte, geckoHeaderSize+100)
+	_, err = encodeFrame(frameHeader{totalChunks: 2}, make([]byte, 100), frame)
+	require.NoError(t, err)
+	sm, err := newSalamanderObfuscator([]byte("shared-password"))
+	require.NoError(t, err)
+	wire := make([]byte, len(frame)+smSaltLen)
+	for {
+		sm.Obfuscate(frame, wire)
+		if autoQUICShort(wire) {
+			break
+		}
+	}
+	_, err = c.WriteTo(wire, serverAddr)
+	require.NoError(t, err)
+	buf := make([]byte, 2048)
+	n, addr, err := a.ReadFrom(buf)
+	require.NoError(t, err)
+	require.Equal(t, wire, buf[:n])
+	require.Equal(t, autoPlain, addr.(*autoAddr).mode)
+}
+
 func TestAutoValidatesOptionsAndLongHeaders(t *testing.T) {
 	for _, opts := range []AutoOptions{
 		{}, {Password: []byte("abc")},
