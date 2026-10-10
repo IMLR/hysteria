@@ -22,6 +22,10 @@ obfs:
     password: g3ck0_in_the_wall
     minPacketSize: 100
     maxPacketSize: 1200
+  auto:
+    password: shared_auto_password
+    minPacketSize: 512
+    maxPacketSize: 1200
 
 tls:
   cert: some.crt

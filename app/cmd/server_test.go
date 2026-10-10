@@ -48,6 +48,11 @@ func TestServerConfig(t *testing.T) {
 				MinPacketSize: 100,
 				MaxPacketSize: 1200,
 			},
+			Auto: serverConfigObfsGecko{
+				Password:      "shared_auto_password",
+				MinPacketSize: 512,
+				MaxPacketSize: 1200,
+			},
 		},
 		TLS: &serverConfigTLS{
 			Cert:     "some.crt",

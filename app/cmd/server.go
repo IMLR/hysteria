@@ -119,6 +119,7 @@ type serverConfigObfs struct {
 	Type       string                     `mapstructure:"type"`
 	Salamander serverConfigObfsSalamander `mapstructure:"salamander"`
 	Gecko      serverConfigObfsGecko      `mapstructure:"gecko"`
+	Auto       serverConfigObfsGecko      `mapstructure:"auto"`
 }
 
 type serverConfigTLS struct {
@@ -432,6 +433,16 @@ func (c *serverConfig) fillRealmConn(hyConfig *server.Config, addr *realm.Addr) 
 
 func (c *serverConfig) wrapObfs(conn net.PacketConn) (net.PacketConn, error) {
 	switch strings.ToLower(c.Obfs.Type) {
+	case "auto":
+		wrapped, err := obfs.WrapPacketConnAuto(conn, obfs.AutoOptions{
+			Password:      []byte(c.Obfs.Auto.Password),
+			MinPacketSize: c.Obfs.Auto.MinPacketSize,
+			MaxPacketSize: c.Obfs.Auto.MaxPacketSize,
+		})
+		if err != nil {
+			return nil, configError{Field: "obfs.auto", Err: err}
+		}
+		return wrapped, nil
 	case "", "plain":
 		return conn, nil
 	case "salamander":

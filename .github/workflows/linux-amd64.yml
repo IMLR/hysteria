@@ -1,0 +1,75 @@
+name: Linux amd64
+
+on:
+  push:
+    branches: [master, main, 'feature/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-amd64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.0'
+          cache-dependency-path: |
+            app/go.sum
+            core/go.sum
+            extras/go.sum
+      - uses: astral-sh/setup-uv@v7
+      - name: Install test dependencies
+        run: |
+          uv sync
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+        env:
+          UV_COMPILE_BYTECODE: '1'
+      - name: Check Go formatting
+        run: test -z "$(gofmt -l extras/obfs/auto*.go app/cmd/server*.go)"
+      - name: Race test mixed obfuscation
+        run: go test -race -count=1 -timeout=3m ./extras/obfs
+      - name: Test all modules
+        run: go test -count=1 -timeout=5m ./core/... ./extras/... ./app/...
+      - name: Build Linux amd64 only
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
+          GOAMD64: v1
+        run: |
+          mkdir -p build
+          cmd_pkg=github.com/apernet/hysteria/app/v2/cmd
+          ldflags="-s -w -X $cmd_pkg.appVersion=v2.13.0-imlr-auto.1"
+          ldflags="$ldflags -X $cmd_pkg.appCommit=$GITHUB_SHA -X $cmd_pkg.appType=release"
+          ldflags="$ldflags -X $cmd_pkg.appDate=$(date -u +%FT%TZ)"
+          ldflags="$ldflags -X $cmd_pkg.appPlatform=linux -X $cmd_pkg.appArch=amd64"
+          ldflags="$ldflags -X $cmd_pkg.libVersion=v2.13.0"
+          go build -trimpath -ldflags "$ldflags" -o build/hysteria-linux-amd64 ./app
+      - name: Verify with stock v2.13.0 clients
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/HyNetworks/hysteria/releases/download/app/v2.13.0/hysteria-linux-amd64 \
+            -o "$RUNNER_TEMP/hysteria-stock"
+          echo "907ba8c9693edb104b20582681fb7dc15639d5b64a9cbb616a7b539190a86691  $RUNNER_TEMP/hysteria-stock" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/hysteria-stock"
+          python3 scripts/test-auto-obfs.py --server build/hysteria-linux-amd64 --client "$RUNNER_TEMP/hysteria-stock"
+      - name: Checksums and build metadata
+        run: |
+          cd build
+          sha256sum hysteria-linux-amd64 > SHA256SUMS
+          ./hysteria-linux-amd64 version > version.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: hysteria-linux-amd64
+          path: build/
+          retention-days: 14
+          if-no-files-found: error

@@ -1,5 +1,10 @@
 # ![Hysteria 2](logo.svg)
 
+This IMLR fork is based on upstream **app/v2.13.0** and adds server-side
+`obfs.type: auto`: plain QUIC, Salamander and Gecko on the same UDP port, with a
+shared obfuscation password. See [configuration and implementation](docs/auto-obfs.md).
+GitHub Actions tests the fork and builds **Linux amd64 only**.
+
 [![License][1]][2] [![Release][3]][4] [![Telegram][5]][6] [![Discussions][7]][8]
 
 [1]: https://img.shields.io/badge/license-MIT-blue
