@@ -36,7 +36,9 @@ jobs:
       - name: Check Go formatting
         run: test -z "$(gofmt -l extras/obfs/auto*.go app/cmd/server*.go)"
       - name: Race test mixed obfuscation
-        run: go test -race -count=1 -timeout=3m ./extras/obfs
+        run: |
+          go test -race -count=1 -timeout=3m ./extras/obfs
+          go test -race -count=50 -run '^TestAuto' -timeout=3m ./extras/obfs
       - name: Test all modules
         run: go test -count=1 -timeout=5m ./core/... ./extras/... ./app/...
       - name: Build Linux amd64 only

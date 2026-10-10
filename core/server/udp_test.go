@@ -135,10 +135,22 @@ func TestUDPSessionManager(t *testing.T) {
 		close(udpConn2Ch)
 		return nil
 	}).Once()
-	eventLogger.EXPECT().Close(msg1.SessionID, nil).Once()
-	eventLogger.EXPECT().Close(msg2_1.SessionID, nil).Once()
+	closedSessions := make(chan struct{}, 2)
+	closed := func(mock.Arguments) { closedSessions <- struct{}{} }
+	eventLogger.EXPECT().Close(msg1.SessionID, nil).Once().Run(closed)
+	eventLogger.EXPECT().Close(msg2_1.SessionID, nil).Once().Run(closed)
 
-	time.Sleep(3 * time.Second) // Wait for timeout
+	// The third cleanup tick and a three-second sleep can complete in either
+	// order. Wait for the actual close events instead of racing that tick.
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	for range 2 {
+		select {
+		case <-closedSessions:
+		case <-deadline.C:
+			t.Fatal("UDP sessions did not emit their idle timeout close events")
+		}
+	}
 	mock.AssertExpectationsForObjects(t, io, eventLogger, udpConn1, udpConn2)
 
 	// Test UDP connection close error propagation

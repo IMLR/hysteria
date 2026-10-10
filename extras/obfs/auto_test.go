@@ -98,9 +98,22 @@ func TestAutoModeSwitchKeepsReplyCodec(t *testing.T) {
 		clients = append(clients, client)
 		_, err := client.WriteTo(payload, serverAddr)
 		require.NoError(t, err)
-		n, addr, err := server.ReadFrom(buf)
-		require.NoError(t, err)
-		require.Equal(t, payload, buf[:n])
+		var addr net.Addr
+		for attempts := 0; ; attempts++ {
+			n, candidate, err := server.ReadFrom(buf)
+			require.NoError(t, err)
+			if candidate.(*autoAddr).mode == mode {
+				require.Equal(t, payload, buf[:n])
+				addr = candidate
+				break
+			}
+			// Once this endpoint has used plain QUIC, Gecko's random salt
+			// may also yield short-header candidates for QUIC to reject.
+			require.Equal(t, autoGecko, mode)
+			require.Equal(t, autoPlain, candidate.(*autoAddr).mode)
+			require.True(t, autoQUICShort(buf[:n]))
+			require.Less(t, attempts, geckoMaxFragmentChunks)
+		}
 		require.Equal(t, clientAddr.String(), addr.String())
 		require.Equal(t, clientAddr.Network(), addr.Network())
 		addresses = append(addresses, addr)
