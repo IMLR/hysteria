@@ -54,7 +54,9 @@ jobs:
           ldflags="$ldflags -X $cmd_pkg.appCommit=$GITHUB_SHA -X $cmd_pkg.appType=release"
           ldflags="$ldflags -X $cmd_pkg.appDate=$(date -u +%FT%TZ)"
           ldflags="$ldflags -X $cmd_pkg.appPlatform=linux -X $cmd_pkg.appArch=amd64"
-          ldflags="$ldflags -X $cmd_pkg.libVersion=v2.13.0"
+          ldflags="$ldflags -X $cmd_pkg.appToolchain=$(go env GOVERSION)"
+          quic_version=$(go list -m -f '{{.Version}}' github.com/apernet/quic-go)
+          ldflags="$ldflags -X $cmd_pkg.libVersion=$quic_version"
           go build -trimpath -ldflags "$ldflags" -o build/hysteria-linux-amd64 ./app
       - name: Verify with stock v2.13.0 clients
         run: |
